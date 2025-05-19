@@ -39,3 +39,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Browser profiles and sensitive data
+/chrome-automation-profile/
+/firefox-automation-profile/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+credentials.json
+token.json
