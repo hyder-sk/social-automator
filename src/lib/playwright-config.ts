@@ -2,7 +2,7 @@ import { chromium, Browser, BrowserContext, Page } from 'playwright';
 
 // Global browser configuration
 const BROWSER_CONFIG = {
-  headless: true,
+  headless: false,
   args: [
     '--no-sandbox',
     '--disable-setuid-sandbox',
@@ -120,7 +120,9 @@ export async function createStealthContext(cookies?: string, proxyConfig?: Proxy
   // Add cookies if provided
   if (cookies) {
     try {
+      console.log('Adding cookies:', cookies);
       const parsedCookies = parseCookies(cookies);
+      console.log('Parsed cookies:', parsedCookies);
       await context.addCookies(parsedCookies);
     } catch (error) {
       console.error('Error parsing cookies:', error);
@@ -174,7 +176,9 @@ export async function createStealthSetup(cookies?: string, proxyConfig?: ProxyCo
   // Add cookies and scripts as before
   if (cookies) {
     try {
+      console.log('Adding cookies:', cookies);
       const parsedCookies = parseCookies(cookies);
+      console.log('Parsed cookies:', parsedCookies);
       await context.addCookies(parsedCookies);
     } catch (error) {
       console.error('Error parsing cookies:', error);

@@ -1,0 +1,83 @@
+[
+    {
+      "domain": ".twitter.com",
+      "name": "guest_id_marketing",
+      "value": "v1:174812036980695120",
+      "path": "/",
+      "secure": true,
+      "httpOnly": false
+    },
+    {
+      "domain": ".twitter.com",
+      "name": "guest_id_ads",
+      "value": "v1:174812036980695120",
+      "path": "/",
+      "secure": true,
+      "httpOnly": false
+    },
+    {
+      "domain": ".twitter.com",
+      "name": "guest_id",
+      "value": "v1:174812036980695120",
+      "path": "/",
+      "secure": true,
+      "httpOnly": false
+    },
+    {
+      "domain": ".twitter.com",
+      "name": "gt",
+      "value": "1926382570146509230",
+      "path": "/",
+      "secure": true,
+      "httpOnly": false
+    },
+    {
+      "domain": ".twitter.com",
+      "name": "att",
+      "value": "1-p9XV8JF1D2OqddTOpezW1QMK0QT9S69vbeX39o4B",
+      "path": "/",
+      "secure": true,
+      "httpOnly": false
+    },
+    {
+      "domain": ".twitter.com",
+      "name": "auth_token",
+      "value": "a09ea3f45815c52974a726d9f6bc2242ecd8526c",
+      "path": "/",
+      "secure": true,
+      "httpOnly": true
+    },
+    {
+      "domain": ".twitter.com",
+      "name": "twid",
+      "value": "u=2222356754",
+      "path": "/",
+      "secure": true,
+      "httpOnly": true
+    },
+    {
+      "domain": ".twitter.com",
+      "name": "ct0",
+      "value": "32e8e26dc10db9248676238dedf860ca41bdace7a8c96befbfce18e8257c46784c24c751ef0af3c5c155e2551c8ffb54a66d25acb860c9e12c03b5548428a2cd923196fafd6d792f5be88601a9733385",
+      "path": "/",
+      "secure": true,
+      "httpOnly": true
+    },
+    {
+      "domain": ".twitter.com",
+      "name": "personalization_id",
+      "value": "v1_Seiufz+eQ1k7CxSCUHdrmg==",
+      "path": "/",
+      "secure": true,
+      "httpOnly": false
+    },
+    {
+      "domain": ".twitter.com",
+      "name": "__cf_bm",
+      "value": "BKoGGEvCmV6HQXcvrJi6a5QbJP6ryikaLvwJc54saJQ-1748120432-1.0.1.1-KtAxKelPc3BFeMPTz_iAeF94ChT.gTEPttIm1iVVAnomKglLsTefARrcpbWJFVPimeZZiuewEknRZlmZFJnCHsaQBW1e0404_ZP16iPZ3W8",
+      "path": "/",
+      "secure": true,
+      "httpOnly": true
+    }
+  ]
+  
