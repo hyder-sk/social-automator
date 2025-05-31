@@ -23,16 +23,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Eye, EyeOff } from "lucide-react";
 
 // Form validation schema
 const formSchema = z.object({
   username: z.string().min(1, "Username is required"),
   email: z.string().email("Invalid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(1, "Password is required"),
   proxy_username: z.string().min(1, "Proxy username is required"),
   proxy_password: z.string().min(1, "Proxy password is required"),
   proxy_ip: z.string().min(1, "Proxy IP is required"),
-  proxy_port: z.string().min(1, "Proxy port is required"),
+  proxy_port: z.coerce.number().min(1, "Proxy port is required"),
   //optional
   mail_password: z.string().optional(),
   mfa_code: z.string().refine((val) => val !== "", "MFA code is required"),
@@ -47,6 +48,8 @@ interface TwitterAccountFormProps {
 export function TwitterAccountForm({ onSuccess }: TwitterAccountFormProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showProxyPassword, setShowProxyPassword] = useState(false);
   const supabase = createClient();
 
   const form = useForm<FormValues>({
@@ -58,7 +61,7 @@ export function TwitterAccountForm({ onSuccess }: TwitterAccountFormProps) {
       proxy_username: "",
       proxy_password: "",
       proxy_ip: "",
-      proxy_port: "",
+      proxy_port: 0,
       mail_password: "",
       mfa_code: "",
     },
@@ -165,11 +168,26 @@ export function TwitterAccountForm({ onSuccess }: TwitterAccountFormProps) {
                 <FormItem>
                   <FormLabel>Password</FormLabel>
                   <FormControl>
-                    <Input
-                      type="password"
-                      placeholder="Enter Twitter password"
-                      {...field}
-                    />
+                    <div className="relative">
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Enter Twitter password"
+                        {...field}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -195,11 +213,26 @@ export function TwitterAccountForm({ onSuccess }: TwitterAccountFormProps) {
                 <FormItem>
                   <FormLabel>Proxy password</FormLabel>
                   <FormControl>
-                    <Input
-                      type="password"
-                      placeholder="Enter proxy password"
-                      {...field}
-                    />
+                    <div className="relative">
+                      <Input
+                        type={showProxyPassword ? "text" : "password"}
+                        placeholder="Enter proxy password"
+                        {...field}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        onClick={() => setShowProxyPassword(!showProxyPassword)}
+                      >
+                        {showProxyPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -225,7 +258,7 @@ export function TwitterAccountForm({ onSuccess }: TwitterAccountFormProps) {
                 <FormItem>
                   <FormLabel>Proxy Port</FormLabel>
                   <FormControl>
-                    <Input placeholder="Enter proxy port" {...field} />
+                    <Input type="number" placeholder="Enter proxy port" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

@@ -149,6 +149,8 @@ export async function POST(request: NextRequest) {
           execution_time: new Date().toISOString(),
           result: "failed",
           message: "Could not find or click Like button",
+          proxy_used: account.proxy_ip && account.proxy_port ? 
+            `${account.proxy_ip}:${account.proxy_port}` : null
         },
       ]);
 
@@ -169,6 +171,8 @@ export async function POST(request: NextRequest) {
           execution_time: new Date().toISOString(),
           result: "success",
           message: "Post is already liked",
+          proxy_used: account.proxy_ip && account.proxy_port ? 
+            `${account.proxy_ip}:${account.proxy_port}` : null
         },
       ]);
 
@@ -197,6 +201,8 @@ export async function POST(request: NextRequest) {
           execution_time: new Date().toISOString(),
           result: "failed",
           message: "Failed to find reaction selector",
+          proxy_used: account.proxy_ip && account.proxy_port ? 
+            `${account.proxy_ip}:${account.proxy_port}` : null
         },
       ]);
 
@@ -271,6 +277,8 @@ export async function POST(request: NextRequest) {
           execution_time: new Date().toISOString(),
           result: "failed",
           message: "Failed to click reaction button",
+          proxy_used: account.proxy_ip && account.proxy_port ? 
+            `${account.proxy_ip}:${account.proxy_port}` : null
         },
       ]);
 
@@ -354,6 +362,8 @@ export async function POST(request: NextRequest) {
           execution_time: new Date().toISOString(),
           result: "failed",
           message: "Could not verify reaction was applied",
+          proxy_used: account.proxy_ip && account.proxy_port ? 
+            `${account.proxy_ip}:${account.proxy_port}` : null
         },
       ]);
 
@@ -373,6 +383,8 @@ export async function POST(request: NextRequest) {
         execution_time: new Date().toISOString(),
         result: "success",
         message: "Like action completed successfully",
+        proxy_used: account.proxy_ip && account.proxy_port ? 
+          `${account.proxy_ip}:${account.proxy_port}` : null
       },
     ]);
 

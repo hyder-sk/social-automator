@@ -9,17 +9,14 @@ import { generateTOTPCode } from "@/lib/utils";
 // Schema for request validation
 const addAccountSchema = z.object({
   username: z.string().min(1, "Username is required"),
-  email: z.string().email("Invalid email"),
+  email: z.string().email("Invalid email address"),
   password: z.string().min(1, "Password is required"),
-  proxy_ip: z.string().optional(),
-  proxy_port: z
-    .string()
-    .optional()
-    .transform((val) => (val ? parseInt(val) : undefined)),
-  proxy_username: z.string().optional(),
-  proxy_password: z.string().optional(),
+  proxy_username: z.string().min(1, "Proxy username is required"),
+  proxy_password: z.string().min(1, "Proxy password is required"),
+  proxy_ip: z.string().min(1, "Proxy IP is required"),
+  proxy_port: z.coerce.number().min(1, "Proxy port is required"),
   mail_password: z.string().optional(),
-  mfa_code: z.string().refine((val) => val !== "", "MFA code is required"),
+  mfa_code: z.string().optional(),
 });
 
 const randomDelay = (min: number, max: number) =>
@@ -28,19 +25,25 @@ const randomDelay = (min: number, max: number) =>
 export async function POST(request: NextRequest) {
   let context: BrowserContext | null = null;
   let page: Page | null = null;
+  let supabase;
+  let session;
+  let proxy_ip: string | undefined;
+  let proxy_port: number | undefined;
+  let task: { id: string } | null = null;
 
   try {
     // Initialize Supabase client with cookie store
     const cookieStore = cookies();
-    const supabase = await createClient(cookieStore);
+    supabase = await createClient(cookieStore);
 
     // Verify authentication
     const {
-      data: { session },
+      data: { session: authSession },
     } = await supabase.auth.getSession();
-    if (!session) {
+    if (!authSession) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    session = authSession;
 
     // Parse and validate request body
     const body = await request.json();
@@ -48,13 +51,16 @@ export async function POST(request: NextRequest) {
       username,
       email,
       password,
-      proxy_ip,
-      proxy_port,
+      proxy_ip: reqProxyIp,
+      proxy_port: reqProxyPort,
       proxy_username,
       proxy_password,
       mail_password,
       mfa_code,
     } = addAccountSchema.parse(body);
+
+    proxy_ip = reqProxyIp;
+    proxy_port = reqProxyPort;
 
     // Configure proxy as HTTP explicitly
     const proxyConfig =
@@ -77,26 +83,111 @@ export async function POST(request: NextRequest) {
     context = newContext;
     page = newPage;
 
-     // Facebook account already exists.find by email
-     const { data: existingAccount, error: dbError } = await supabase
-     .from('social_accounts')
-     .select('*')
-     .eq('email', email)
-     .eq('platform', 'twitter')
-     .single();
+    // Check if account already exists
+    const { data: existingAccount, error: dbError } = await supabase
+      .from('social_accounts')
+      .select('*')
+      .eq('email', email)
+      .eq('platform', 'twitter')
+      .single();
 
-   if (existingAccount) {
-     // If account exists and is active, return error
-     if (existingAccount.status === 'active') {
-       return NextResponse.json({
-         success: false,
-         message: "Twitter account already exists and is active"
-       });
-     }
-     
-     // If account exists but is pending, we'll update it later
-     console.log("Found existing pending account, will update it");
-   }
+    if (existingAccount) {
+      // If account exists and is active, return error
+      if (existingAccount.status === 'active') {
+        return NextResponse.json({
+          success: false,
+          message: "Twitter account already exists and is active"
+        });
+      }
+      
+      // If account exists but is pending, we'll update it later
+      console.log("Found existing pending account, will update it");
+    }
+
+    // Create or update social account first
+    let account;
+    if (existingAccount && existingAccount.status === 'pending') {
+      // Update existing pending account
+      const { data: updatedAccount, error: updateError } = await supabase
+        .from("social_accounts")
+        .update({
+          username: username,
+          status: 'pending',
+          proxy_ip: proxy_ip,
+          proxy_port: proxy_port,
+          proxy_username: proxy_username,
+          proxy_password: proxy_password,
+          mail_password: mail_password,
+          mfa_code: mfa_code,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingAccount.id)
+        .select()
+        .single();
+      
+      account = updatedAccount;
+      if (updateError) {
+        throw new Error("Failed to update existing account");
+      }
+    } else {
+      // Create new account
+      const { data: newAccount, error: insertError } = await supabase
+        .from("social_accounts")
+        .insert([
+          {
+            user_id: session.user.id,
+            platform: "twitter",
+            type: "manual",
+            email,
+            password,
+            username,
+            status: 'pending',
+            proxy_ip: proxy_ip,
+            proxy_port: proxy_port,
+            proxy_username: proxy_username,
+            proxy_password: proxy_password,
+            mail_password: mail_password,
+            mfa_code: mfa_code,
+          },
+        ])
+        .select()
+        .single();
+      
+      account = newAccount;
+      if (insertError) {
+        throw new Error("Failed to create new account");
+      }
+    }
+
+    // Now create the task with the social account ID
+    const taskData = {
+      user_id: session.user.id,
+      social_account_id: account.id,
+      type: 'add_account',
+      action_data: {
+        username,
+        email,
+        operation: 'add_account'
+      },
+      schedule_type: 'once',
+      schedule_data: {},
+      status: 'pending',
+      next_run_at: new Date().toISOString()
+    };
+
+    // Insert task into database
+    const { data: newTask, error: taskError } = await supabase
+      .from('tasks')
+      .insert([taskData])
+      .select()
+      .single();
+
+    if (taskError) {
+      console.error('Task creation error:', taskError);
+      throw new Error('Failed to create task');
+    }
+
+    task = newTask;
 
     if (!page) {
       throw new Error("Failed to create new page");
@@ -106,7 +197,7 @@ export async function POST(request: NextRequest) {
       // Step 1: Navigate to Twitter login page
       await page.goto("https://x.com/i/flow/login", {
         waitUntil: "domcontentloaded",
-        timeout: 60000,
+        timeout: 300000,
       });
 
       // Wait with human-like delay
@@ -116,7 +207,7 @@ export async function POST(request: NextRequest) {
       try {
         // Wait for the input to be visible
         await page.waitForSelector('input[autocomplete="username"]', {
-          timeout: 30000,
+          timeout: 300000,
         });
 
         const usernameInput = await page
@@ -205,7 +296,7 @@ export async function POST(request: NextRequest) {
       try {
         // Wait for password field to appear (increased timeout)
         await page.waitForSelector('input[name="password"]', {
-          timeout: 90000,
+          timeout: 300000,
         });
 
         const passwordInput = await page
@@ -340,7 +431,7 @@ export async function POST(request: NextRequest) {
       // Step 5: Check if we're logged in and handle redirect if needed
       let loggedIn = false;
       let retryCount = 0;
-      const maxRetries = 3;
+      const maxRetries = 5;
       let extractedUsername = "";
 
       while (!loggedIn && retryCount < maxRetries) {
@@ -404,6 +495,7 @@ export async function POST(request: NextRequest) {
                 // Last resort - use the username from input
                 extractedUsername = username;
               }
+
             }
           } catch (usernameError) {
             console.error("Error getting username:", usernameError);
@@ -517,7 +609,72 @@ export async function POST(request: NextRequest) {
 
         if (accountError) {
           console.error("Account creation/update error:", accountError);
+          
+          // Log the failure in task_logs
+          try {
+            if (task) {
+              const { error: logError } = await supabase
+                .from('task_logs')
+                .insert([{
+                  task_id: task.id,
+                  execution_time: new Date().toISOString(),
+                  result: 'failed',
+                  message: `Failed to store account in database due to ${accountError.message}`,
+                  proxy_used: `${proxy_ip}:${proxy_port}`,
+                }]);
+
+              if (logError) {
+                console.error('Failed to log task failure:', logError);
+              }
+
+              // Update task status
+              await supabase
+                .from('tasks')
+                .update({ status: 'failed' })
+                .eq('id', task.id);
+            }
+          } catch (logError) {
+            console.error('Error logging task failure:', logError);
+          }
+
           throw new Error("Failed to store account in database");
+        }
+
+        // If account is active, delete any other pending accounts with the same email
+        if (loggedIn && account) {
+          const { error: deleteError } = await supabase
+            .from('social_accounts')
+            .delete()
+            .eq('email', email)
+            .eq('platform', 'twitter')
+            .eq('status', 'pending')
+            .neq('id', account.id);
+
+          if (deleteError) {
+            console.error('Error deleting pending accounts:', deleteError);
+          }
+        }
+
+        // After successful account creation/update, update the task with the account ID
+        if (account && task) {
+          await supabase
+            .from('tasks')
+            .update({
+              social_account_id: account.id,
+              status: loggedIn ? 'completed' : 'pending'
+            })
+            .eq('id', task.id);
+
+          // Log success to task_logs
+          await supabase
+            .from('task_logs')
+            .insert([{
+              task_id: task.id,
+              execution_time: new Date().toISOString(),
+              result: 'success',
+              message: loggedIn ? 'Account added successfully' : 'Account added with pending status',
+              proxy_used: `${proxy_ip}:${proxy_port}`
+            }]);
         }
 
         return NextResponse.json({
@@ -529,6 +686,34 @@ export async function POST(request: NextRequest) {
         });
       } catch (dbError) {
         console.error("Database error:", dbError);
+        
+        // Log the failure in task_logs
+        try {
+          if (task) {
+            const { error: logError } = await supabase
+              .from('task_logs')
+              .insert([{
+                task_id: task.id,
+                execution_time: new Date().toISOString(),
+                result: 'failed',
+                message: `Failed to store account in database due to ${dbError instanceof Error ? dbError.message : String(dbError)}`,
+                proxy_used: `${proxy_ip}:${proxy_port}`,
+              }]);
+
+            if (logError) {
+              console.error('Failed to log task failure:', logError);
+            }
+
+            // Update task status
+            await supabase
+              .from('tasks')
+              .update({ status: 'failed' })
+              .eq('id', task.id);
+          }
+        } catch (logError) {
+          console.error('Error logging task failure:', logError);
+        }
+
         throw new Error(
           "Failed to store account in database: " +
             (dbError instanceof Error ? dbError.message : String(dbError))
@@ -540,6 +725,34 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     console.error("Error adding account:", error);
+    
+    // Add failed status to task_logs if we have supabase and session
+    if (supabase && session && task) {
+      try {
+        const { error: logError } = await supabase
+          .from('task_logs')
+          .insert([{
+            task_id: task.id,
+            execution_time: new Date().toISOString(),
+            result: 'failed',
+            message: error instanceof Error ? error.message : 'Failed to add account',
+            proxy_used: proxy_ip && proxy_port ? `${proxy_ip}:${proxy_port}` : null,
+          }]);
+
+        if (logError) {
+          console.error('Failed to log task failure:', logError);
+        }
+
+        // Update task status
+        await supabase
+          .from('tasks')
+          .update({ status: 'failed' })
+          .eq('id', task.id);
+      } catch (logError) {
+        console.error('Error logging task failure:', logError);
+      }
+    }
+
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Failed to add account",

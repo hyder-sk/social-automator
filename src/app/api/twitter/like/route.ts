@@ -215,6 +215,8 @@ export async function POST(request: NextRequest) {
           execution_time: new Date().toISOString(),
           result: 'success',
           message: 'Tweet liked successfully',
+          proxy_used: account.proxy_ip && account.proxy_port ? 
+            `${account.proxy_ip}:${account.proxy_port}` : null
         }]);
 
       // Update task status
@@ -240,6 +242,8 @@ export async function POST(request: NextRequest) {
           execution_time: new Date().toISOString(),
           result: 'failed',
           message: error instanceof Error ? error.message : 'Failed to like tweet',
+          proxy_used: account.proxy_ip && account.proxy_port ? 
+            `${account.proxy_ip}:${account.proxy_port}` : null
         }]);
 
       // Update task status

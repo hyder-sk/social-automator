@@ -21,6 +21,13 @@ import {
 import { MoreHorizontal, Power, PowerOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { TwitterAccountForm } from './TwitterAccountForm';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 
 interface TwitterAccount {
   id: string;
@@ -33,6 +40,8 @@ interface TwitterAccount {
 export function TwitterAccounts() {
   const [accounts, setAccounts] = useState<TwitterAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showDeactivatedDialog, setShowDeactivatedDialog] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState<TwitterAccount | null>(null);
   const supabase = createClient();
   const router = useRouter();
 
@@ -101,8 +110,13 @@ export function TwitterAccounts() {
     }
   };
 
-  const handleRowClick = (accountId: string) => {
-    router.push(`/dashboard/twitter/accounts/${accountId}`);
+  const handleRowClick = (account: TwitterAccount) => {
+    if (account.status === 'inactive') {
+      setSelectedAccount(account);
+      setShowDeactivatedDialog(true);
+    } else {
+      router.push(`/dashboard/twitter/accounts/${account.id}`);
+    }
   };
 
   return (
@@ -141,7 +155,7 @@ export function TwitterAccounts() {
                 <TableRow 
                   key={account.id}
                   className="cursor-pointer hover:bg-gray-50"
-                  onClick={() => handleRowClick(account.id)}
+                  onClick={() => handleRowClick(account)}
                 >
                   <TableCell>@{account.username}</TableCell>
                   <TableCell>{account.email}</TableCell>
@@ -177,7 +191,7 @@ export function TwitterAccounts() {
                             handleStatusToggle(account.id, account.status);
                           }}
                         >
-                          {/* {account.status === 'active' ? (
+                          {account.status === 'active' ? (
                             <>
                               <PowerOff className="mr-2 h-4 w-4" />
                               Deactivate
@@ -187,7 +201,7 @@ export function TwitterAccounts() {
                               <Power className="mr-2 h-4 w-4" />
                               Activate
                             </>
-                          )} */}
+                          )}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-red-600"
@@ -207,6 +221,37 @@ export function TwitterAccounts() {
           </TableBody>
         </Table>
       </div>
+
+      <Dialog open={showDeactivatedDialog} onOpenChange={setShowDeactivatedDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Account Deactivated</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-gray-500">
+              This account is currently deactivated. Please activate the account first to proceed.
+            </p>
+          </div>
+          <div className="flex justify-end space-x-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowDeactivatedDialog(false)}
+            >
+              Close
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedAccount) {
+                  handleStatusToggle(selectedAccount.id, selectedAccount.status);
+                  setShowDeactivatedDialog(false);
+                }
+              }}
+            >
+              Activate Account
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 } 
