@@ -1,4 +1,4 @@
-import { chromium, Browser, BrowserContext, Page } from 'playwright';
+import { chromium, Browser, BrowserContext, Page, Cookie } from 'playwright';
 
 // Global browser configuration
 const BROWSER_CONFIG = {
@@ -76,12 +76,38 @@ export async function initGlobalBrowser() {
 }
 
 // Helper function to parse cookies
-function parseCookies(cookies: string) {
+function parseCookies(cookies: string | any[]): Cookie[] {
   try {
-    // First try parsing as JSON
-    return JSON.parse(cookies);
-  } catch {
-    // If not JSON, parse as cookie string
+    // If it's already an array of cookie objects, return it
+    if (Array.isArray(cookies)) {
+      return cookies.map(cookie => ({
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.domain,
+        path: cookie.path,
+        expires: cookie.expires || cookie.expirationDate,
+        httpOnly: cookie.httpOnly,
+        secure: cookie.secure,
+        sameSite: mapSameSite(cookie.sameSite),
+      }));
+    }
+
+    // If it's a JSON string, parse it
+    if (typeof cookies === 'string' && cookies.trim().startsWith('[')) {
+      const parsedCookies = JSON.parse(cookies);
+      return parsedCookies.map((cookie: any) => ({
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.domain,
+        path: cookie.path,
+        expires: cookie.expires || cookie.expirationDate,
+        httpOnly: cookie.httpOnly,
+        secure: cookie.secure,
+        sameSite: mapSameSite(cookie.sameSite),
+      }));
+    }
+
+    // If it's a cookie string, parse it
     return cookies.split(';').map(cookie => {
       const [name, value] = cookie.trim().split('=');
       return {
@@ -91,10 +117,27 @@ function parseCookies(cookies: string) {
         path: '/',
         secure: true,
         httpOnly: true,
-        sameSite: 'Lax'
+        sameSite: 'None',
+        expires: Date.now() + 365 * 24 * 60 * 60 * 1000, // 1 year from now
       };
     });
+  } catch (error) {
+    console.error('Error parsing cookies:', error);
+    throw new Error('Invalid cookie format');
   }
+}
+
+// Helper function to map sameSite values to Playwright's expected format
+function mapSameSite(sameSite: string | undefined): 'Strict' | 'Lax' | 'None' {
+  if (!sameSite) return 'None';
+  
+  const normalized = sameSite.toLowerCase();
+  if (normalized === 'no_restriction' || normalized === 'none') return 'None';
+  if (normalized === 'lax') return 'Lax';
+  if (normalized === 'strict') return 'Strict';
+  
+  // Default to None for unspecified or unknown values
+  return 'None';
 }
 
 // Create a new context with stealth configuration
@@ -120,9 +163,7 @@ export async function createStealthContext(cookies?: string, proxyConfig?: Proxy
   // Add cookies if provided
   if (cookies) {
     try {
-      console.log('Adding cookies:', cookies);
       const parsedCookies = parseCookies(cookies);
-      console.log('Parsed cookies:', parsedCookies);
       await context.addCookies(parsedCookies);
     } catch (error) {
       console.error('Error parsing cookies:', error);
@@ -176,9 +217,7 @@ export async function createStealthSetup(cookies?: string, proxyConfig?: ProxyCo
   // Add cookies and scripts as before
   if (cookies) {
     try {
-      console.log('Adding cookies:', cookies);
       const parsedCookies = parseCookies(cookies);
-      console.log('Parsed cookies:', parsedCookies);
       await context.addCookies(parsedCookies);
     } catch (error) {
       console.error('Error parsing cookies:', error);

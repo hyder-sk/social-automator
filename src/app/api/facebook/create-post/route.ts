@@ -384,25 +384,25 @@ async function executePost(task: Task, supabase: any) {
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(3000);
 
-    // Verify the post was created by checking multiple possible selectors
-    const postContent = await Promise.race([
-      page.waitForSelector(
-        `div[data-pagelet="FeedUnit_0"]:has-text("${task.action_data.content}")`,
-        { timeout: 15000 }
-      ),
-      page.waitForSelector(
-        `div[role="article"]:has-text("${task.action_data.content}")`,
-        { timeout: 15000 }
-      ),
-      page.waitForSelector(
-        `div[data-ad-preview="message"]:has-text("${task.action_data.content}")`,
-        { timeout: 15000 }
-      ),
-    ]);
+    // // Verify the post was created by checking multiple possible selectors
+    // const postContent = await Promise.race([
+    //   page.waitForSelector(
+    //     `div[data-pagelet="FeedUnit_0"]:has-text("${task.action_data.content}")`,
+    //     { timeout: 15000 }
+    //   ),
+    //   page.waitForSelector(
+    //     `div[role="article"]:has-text("${task.action_data.content}")`,
+    //     { timeout: 15000 }
+    //   ),
+    //   page.waitForSelector(
+    //     `div[data-ad-preview="message"]:has-text("${task.action_data.content}")`,
+    //     { timeout: 15000 }
+    //   ),
+    // ]);
 
-    if (!postContent) {
-      throw new Error("Post content not found after posting");
-    }
+    // if (!postContent) {
+    //   throw new Error("Post content not found after posting");
+    // }
 
     // Log success to task_logs
     await supabase.from("task_logs").insert([

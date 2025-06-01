@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -23,13 +23,26 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, CheckCircle2, XCircle } from 'lucide-react';
+import { cn } from "@/lib/utils";
 
 // Form validation schema
 const formSchema = z.object({
   username: z.string().min(1, 'Username is required'),
-  email: z.string().email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
+  cookies: z.string().min(1, 'Cookies are required').refine(
+    (value) => {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) && parsed.length > 0 && parsed.every(cookie => 
+          cookie.domain && cookie.name && cookie.value
+        );
+      } catch {
+        return false;
+      }
+    },
+    "Invalid cookie format. Please provide cookies in JSON array format"
+  ),
   proxy_username: z.string().min(1, "Proxy username is required"),
   proxy_password: z.string().min(1, "Proxy password is required"),
   proxy_ip: z.string().min(1, "Proxy IP is required"),
@@ -47,20 +60,42 @@ export function FacebookAccountForm({ onSuccess }: FacebookAccountFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showProxyPassword, setShowProxyPassword] = useState(false);
+  const [isCookiesValid, setIsCookiesValid] = useState<boolean | null>(null);
   const supabase = createClient();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       username: '',
-      email: '',
       password: '',
+      cookies: '',
       proxy_username: '',
       proxy_password: '',
       proxy_ip: '',
       proxy_port: 0,
     },
   });
+
+  // Watch cookies field for validation
+  const cookies = form.watch('cookies');
+  
+  // Validate cookies on change
+  useEffect(() => {
+    if (!cookies) {
+      setIsCookiesValid(null);
+      return;
+    }
+    
+    try {
+      const parsed = JSON.parse(cookies);
+      const isValid = Array.isArray(parsed) && 
+                     parsed.length > 0 && 
+                     parsed.every(cookie => cookie.domain && cookie.name && cookie.value);
+      setIsCookiesValid(isValid);
+    } catch {
+      setIsCookiesValid(false);
+    }
+  }, [cookies]);
 
   const onSubmit = async (values: FormValues) => {
     setIsLoading(true);
@@ -71,7 +106,7 @@ export function FacebookAccountForm({ onSuccess }: FacebookAccountFormProps) {
         throw new Error('User not authenticated');
       }
 
-      // Call our new API endpoint that handles Chrome automation
+      // Send cookies string directly without parsing
       const response = await fetch('/api/facebook/add-account', {
         method: 'POST',
         headers: {
@@ -79,8 +114,8 @@ export function FacebookAccountForm({ onSuccess }: FacebookAccountFormProps) {
         },
         body: JSON.stringify({
           username: values.username,
-          email: values.email,
           password: values.password,
+          cookies: values.cookies, // Send the string directly
           proxy_username: values.proxy_username,
           proxy_password: values.proxy_password,
           proxy_ip: values.proxy_ip,
@@ -139,19 +174,6 @@ export function FacebookAccountForm({ onSuccess }: FacebookAccountFormProps) {
             />
             <FormField
               control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter Facebook email" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
               name="password"
               render={({ field }) => (
                 <FormItem>
@@ -176,6 +198,37 @@ export function FacebookAccountForm({ onSuccess }: FacebookAccountFormProps) {
                           <Eye className="h-4 w-4" />
                         )}
                       </Button>
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="cookies"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Cookies (JSON Array)</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <Input 
+                        placeholder='[{"domain":".facebook.com","name":"datr","value":"abc123"},{"domain":".facebook.com","name":"c_user","value":"123456789"}]' 
+                        {...field} 
+                        className={cn(
+                          "font-mono text-sm pr-10",
+                          isCookiesValid === true && "border-green-500 focus-visible:ring-green-500",
+                          isCookiesValid === false && "border-red-500 focus-visible:ring-red-500"
+                        )}
+                      />
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        {isCookiesValid === true && (
+                          <CheckCircle2 className="h-5 w-5 text-green-500" />
+                        )}
+                        {isCookiesValid === false && (
+                          <XCircle className="h-5 w-5 text-red-500" />
+                        )}
+                      </div>
                     </div>
                   </FormControl>
                   <FormMessage />

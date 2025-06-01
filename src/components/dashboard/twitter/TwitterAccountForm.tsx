@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -23,20 +23,33 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, CheckCircle2, XCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // Form validation schema
 const formSchema = z.object({
   username: z.string().min(1, "Username is required"),
   email: z.string().email("Invalid email address"),
   password: z.string().min(1, "Password is required"),
+  cookies: z.string().min(1, "Cookies are required").refine(
+    (value) => {
+      try {
+        // Check if it's a valid cookie string format (key=value; key2=value2)
+        const cookies = value.split(';').map(cookie => cookie.trim());
+        return cookies.length > 0 && cookies.every(cookie => {
+          const [key, value] = cookie.split('=');
+          return key && value;
+        });
+      } catch {
+        return false;
+      }
+    },
+    "Invalid cookie format. Please provide cookies in format: key=value; key2=value2"
+  ),
   proxy_username: z.string().min(1, "Proxy username is required"),
   proxy_password: z.string().min(1, "Proxy password is required"),
   proxy_ip: z.string().min(1, "Proxy IP is required"),
   proxy_port: z.coerce.number().min(1, "Proxy port is required"),
-  //optional
-  mail_password: z.string().optional(),
-  mfa_code: z.string().refine((val) => val !== "", "MFA code is required"),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -48,8 +61,8 @@ interface TwitterAccountFormProps {
 export function TwitterAccountForm({ onSuccess }: TwitterAccountFormProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const [showProxyPassword, setShowProxyPassword] = useState(false);
+  const [isCookiesValid, setIsCookiesValid] = useState<boolean | null>(null);
   const supabase = createClient();
 
   const form = useForm<FormValues>({
@@ -58,14 +71,35 @@ export function TwitterAccountForm({ onSuccess }: TwitterAccountFormProps) {
       username: "",
       email: "",
       password: "",
+      cookies: "",
       proxy_username: "",
       proxy_password: "",
       proxy_ip: "",
       proxy_port: 0,
-      mail_password: "",
-      mfa_code: "",
     },
   });
+
+  // Watch cookies field for validation
+  const cookies = form.watch('cookies');
+  
+  // Validate cookies on change
+  useEffect(() => {
+    if (!cookies) {
+      setIsCookiesValid(null);
+      return;
+    }
+    
+    try {
+      const cookieArray = cookies.split(';').map(cookie => cookie.trim());
+      const isValid = cookieArray.length > 0 && cookieArray.every(cookie => {
+        const [key, value] = cookie.split('=');
+        return key && value;
+      });
+      setIsCookiesValid(isValid);
+    } catch {
+      setIsCookiesValid(false);
+    }
+  }, [cookies]);
 
   const onSubmit = async (values: FormValues) => {
     setIsLoading(true);
@@ -87,25 +121,17 @@ export function TwitterAccountForm({ onSuccess }: TwitterAccountFormProps) {
           username: values.username,
           email: values.email,
           password: values.password,
+          cookies: values.cookies,
           proxy_username: values.proxy_username,
           proxy_password: values.proxy_password,
           proxy_ip: values.proxy_ip,
           proxy_port: values.proxy_port,
-          mail_password: values.mail_password,
-          mfa_code: values.mfa_code,
         }),
       });
 
       if (!response.ok) {
         const error = await response.json();
-        console.log(error);
-        throw new Error("Failed to add Twitter account. Please try again!");
-      }
-
-      const result = await response.json();
-
-      if (result.error) {
-        throw new Error(result.error);
+        throw new Error(error.error || "Failed to add Twitter account");
       }
 
       toast.success("Twitter account added successfully");
@@ -170,7 +196,7 @@ export function TwitterAccountForm({ onSuccess }: TwitterAccountFormProps) {
                   <FormControl>
                     <div className="relative">
                       <Input
-                        type={showPassword ? "text" : "password"}
+                        type={showProxyPassword ? "text" : "password"}
                         placeholder="Enter Twitter password"
                         {...field}
                       />
@@ -179,14 +205,45 @@ export function TwitterAccountForm({ onSuccess }: TwitterAccountFormProps) {
                         variant="ghost"
                         size="sm"
                         className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                        onClick={() => setShowPassword(!showPassword)}
+                        onClick={() => setShowProxyPassword(!showProxyPassword)}
                       >
-                        {showPassword ? (
+                        {showProxyPassword ? (
                           <EyeOff className="h-4 w-4" />
                         ) : (
                           <Eye className="h-4 w-4" />
                         )}
                       </Button>
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="cookies"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Cookies</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <Input 
+                        placeholder="guest_id=v1%3A123456789; auth_token=abc123def456; ct0=xyz789; _twitter_sess=ABC123DEF456; ..." 
+                        {...field} 
+                        className={cn(
+                          "font-mono text-sm pr-10",
+                          isCookiesValid === true && "border-green-500 focus-visible:ring-green-500",
+                          isCookiesValid === false && "border-red-500 focus-visible:ring-red-500"
+                        )}
+                      />
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        {isCookiesValid === true && (
+                          <CheckCircle2 className="h-5 w-5 text-green-500" />
+                        )}
+                        {isCookiesValid === false && (
+                          <XCircle className="h-5 w-5 text-red-500" />
+                        )}
+                      </div>
                     </div>
                   </FormControl>
                   <FormMessage />
@@ -259,32 +316,6 @@ export function TwitterAccountForm({ onSuccess }: TwitterAccountFormProps) {
                   <FormLabel>Proxy Port</FormLabel>
                   <FormControl>
                     <Input type="number" placeholder="Enter proxy port" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="mail_password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Mail Password</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter mail password" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="mfa_code"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>MFA Code</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter MFA code" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

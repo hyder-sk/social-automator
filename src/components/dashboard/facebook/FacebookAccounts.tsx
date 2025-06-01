@@ -33,7 +33,7 @@ interface FacebookAccount {
   id: string;
   username: string;
   email: string;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'deleted';
   created_at: string;
 }
 
@@ -47,24 +47,18 @@ export function FacebookAccounts() {
 
   const fetchAccounts = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        throw new Error('User not authenticated');
-      }
-
       const { data, error } = await supabase
         .from('social_accounts')
         .select('*')
-        .eq('user_id', user.id)
         .eq('platform', 'facebook')
-        .eq('type', 'manual')
+        .is('deleted_at', null)
+        .neq('status', 'deleted')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       setAccounts(data || []);
     } catch (error) {
-      console.error('Error fetching Facebook accounts:', error);
+      console.error('Error fetching accounts:', error);
       toast.error('Failed to fetch Facebook accounts');
     } finally {
       setIsLoading(false);
@@ -79,7 +73,10 @@ export function FacebookAccounts() {
     try {
       const { error } = await supabase
         .from('social_accounts')
-        .delete()
+        .update({ 
+          deleted_at: new Date().toISOString(),
+          status: 'deleted'
+        })
         .eq('id', id);
 
       if (error) throw error;
@@ -92,7 +89,7 @@ export function FacebookAccounts() {
     }
   };
 
-  const handleStatusToggle = async (id: string, currentStatus: 'active' | 'inactive') => {
+  const handleStatusToggle = async (id: string, currentStatus: 'active' | 'inactive' | 'deleted') => {
     try {
       const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
       const { error } = await supabase
@@ -111,7 +108,7 @@ export function FacebookAccounts() {
   };
 
   const handleRowClick = (account: FacebookAccount) => {
-    if (account.status === 'inactive') {
+    if (account.status === 'inactive' || account.status === 'deleted') {
       setSelectedAccount(account);
       setShowDeactivatedDialog(true);
     } else {

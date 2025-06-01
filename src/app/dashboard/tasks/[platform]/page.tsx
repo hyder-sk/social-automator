@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { toast } from "sonner";
 
 interface TaskLog {
   id: string;
@@ -42,6 +43,7 @@ export default function TaskDetailsPage() {
   });
   const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
   const supabase = createClient();
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchTasks();
@@ -49,6 +51,18 @@ export default function TaskDetailsPage() {
 
   const fetchTasks = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      if (!platform) {
+        throw new Error('Platform is required');
+      }
+
+      console.log('Fetching tasks for platform:', platform);
+
       const { data, error } = await supabase
         .from('tasks')
         .select(`
@@ -56,8 +70,10 @@ export default function TaskDetailsPage() {
           type,
           status,
           created_at,
-          social_accounts!inner (
-            platform
+          social_accounts!tasks_social_account_id_fkey (
+            id,
+            platform,
+            user_id
           ),
           task_logs (
             id,
@@ -67,10 +83,25 @@ export default function TaskDetailsPage() {
             proxy_used
           )
         `)
+        .eq('user_id', user.id)
         .eq('social_accounts.platform', platform.toLowerCase())
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error details:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        throw error;
+      }
+
+      if (!data) {
+        console.log('No tasks found for platform:', platform);
+        setTasks([]);
+        return;
+      }
 
       console.log('Raw tasks data:', data);
 
@@ -83,6 +114,13 @@ export default function TaskDetailsPage() {
       setTasks(tasks);
     } catch (error) {
       console.error('Error fetching tasks:', error);
+      if (error instanceof Error) {
+        console.error('Error details:', error.message);
+      }
+      toast.error('Failed to fetch tasks. Please try again.');
+      setTasks([]); // Set empty array on error
+    } finally {
+      setIsLoading(false);
     }
   };
 

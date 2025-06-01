@@ -23,10 +23,12 @@ interface Task {
   type: string;
   status: string;
   created_at: string;
-  task_logs: TaskLog[];
   social_accounts: {
     platform: string;
-  };
+  } | {
+    platform: string;
+  }[];
+  task_logs: TaskLog[];
 }
 
 interface TaskStats {
@@ -95,6 +97,13 @@ export function Overview() {
 
   const fetchMetrics = async () => {
     try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
       // Fetch accounts count with status
       const { data: accounts } = await supabase
         .from('social_accounts')
@@ -109,7 +118,7 @@ export function Overview() {
           type,
           status,
           created_at,
-          social_accounts (
+          social_accounts!tasks_social_account_id_fkey (
             platform
           ),
           task_logs (
@@ -120,7 +129,8 @@ export function Overview() {
             proxy_used
           )
         `)
-        .order('created_at', { ascending: false }) as { data: Task[] | null };
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
 
       // Process the data
       const newMetrics = { ...metrics };
@@ -142,10 +152,25 @@ export function Overview() {
         }
       });
 
+      console.log(tasks)
+
       // Process tasks and logs
       tasks?.forEach(task => {
-        const platform = task.social_accounts?.platform;
-        if (!platform || !newMetrics[platform]) return;
+        // Debug log for full task data
+        console.log('Full task data:', JSON.stringify(task, null, 2));
+
+        // Access platform from social_accounts object
+        let platform;
+        if (Array.isArray(task.social_accounts)) {
+          platform = task.social_accounts[0]?.platform?.toLowerCase();
+        } else {
+          platform = (task.social_accounts as { platform: string })?.platform?.toLowerCase();
+        }
+
+        if (!platform || !newMetrics[platform]) {
+          console.log('Skipping task - invalid platform:', platform);
+          return;
+        }
 
         const taskStats = newMetrics[platform].tasks;
         const last24HoursStats = newMetrics[platform].last24Hours;
@@ -153,31 +178,39 @@ export function Overview() {
         const taskDate = new Date(task.created_at);
         const isLast24Hours = now.getTime() - taskDate.getTime() <= 24 * 60 * 60 * 1000;
 
+        // Count total tasks
         taskStats.total++;
         if (isLast24Hours) {
           last24HoursStats.total++;
         }
 
-        // Process task logs
-        task.task_logs?.forEach(log => {
-          if (log.result === 'success') {
-            taskStats.passed++;
-            if (isLast24Hours) last24HoursStats.passed++;
-          } else if (log.result === 'failed') {
-            taskStats.failed++;
-            if (isLast24Hours) last24HoursStats.failed++;
-            
-            // Add to failed tasks if it's a failed task
-            if (task.status === 'failed') {
-              if (!newMetrics[platform].failedTasks) {
-                newMetrics[platform].failedTasks = [];
-              }
-              newMetrics[platform].failedTasks?.push(task);
-            }
+        // Count based on task status
+        if (task.status === 'completed') {
+          taskStats.passed++;
+          if (isLast24Hours) last24HoursStats.passed++;
+        } else if (task.status === 'failed') {
+          taskStats.failed++;
+          if (isLast24Hours) last24HoursStats.failed++;
+          
+          // Add to failed tasks if it's a failed task
+          if (!newMetrics[platform].failedTasks) {
+            newMetrics[platform].failedTasks = [];
           }
+          newMetrics[platform].failedTasks?.push({
+            ...task,
+            social_accounts: { platform }
+          });
+        }
+
+        // Debug log for metrics after processing
+        console.log('Updated metrics for platform:', platform, {
+          total: taskStats.total,
+          passed: taskStats.passed,
+          failed: taskStats.failed
         });
       });
 
+      console.log('Final processed metrics:', newMetrics);
       setMetrics(newMetrics);
     } catch (error) {
       console.error('Error fetching metrics:', error);

@@ -33,7 +33,7 @@ interface TwitterAccount {
   id: string;
   username: string;
   email: string;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'deleted';
   created_at: string;
 }
 
@@ -47,24 +47,18 @@ export function TwitterAccounts() {
 
   const fetchAccounts = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        throw new Error('User not authenticated');
-      }
-
       const { data, error } = await supabase
         .from('social_accounts')
         .select('*')
-        .eq('user_id', user.id)
         .eq('platform', 'twitter')
-        .eq('type', 'manual')
+        .is('deleted_at', null)  // Only get non-deleted accounts
+        .neq('status', 'deleted') // Also exclude accounts with deleted status
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       setAccounts(data || []);
     } catch (error) {
-      console.error('Error fetching Twitter accounts:', error);
+      console.error('Error fetching accounts:', error);
       toast.error('Failed to fetch Twitter accounts');
     } finally {
       setIsLoading(false);
@@ -79,7 +73,10 @@ export function TwitterAccounts() {
     try {
       const { error } = await supabase
         .from('social_accounts')
-        .delete()
+        .update({ 
+          deleted_at: new Date().toISOString(),
+          status: 'deleted'
+        })
         .eq('id', id);
 
       if (error) throw error;
@@ -92,7 +89,7 @@ export function TwitterAccounts() {
     }
   };
 
-  const handleStatusToggle = async (id: string, currentStatus: 'active' | 'inactive') => {
+  const handleStatusToggle = async (id: string, currentStatus: 'active' | 'inactive' | 'deleted') => {
     try {
       const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
       const { error } = await supabase
@@ -111,7 +108,7 @@ export function TwitterAccounts() {
   };
 
   const handleRowClick = (account: TwitterAccount) => {
-    if (account.status === 'inactive') {
+    if (account.status === 'inactive' || account.status === 'deleted') {
       setSelectedAccount(account);
       setShowDeactivatedDialog(true);
     } else {
@@ -157,7 +154,7 @@ export function TwitterAccounts() {
                   className="cursor-pointer hover:bg-gray-50"
                   onClick={() => handleRowClick(account)}
                 >
-                  <TableCell>@{account.username}</TableCell>
+                  <TableCell>{account.username}</TableCell>
                   <TableCell>{account.email}</TableCell>
                   <TableCell>
                     <span
