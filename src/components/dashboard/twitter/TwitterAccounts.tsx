@@ -21,41 +21,44 @@ import {
 import { MoreHorizontal, Power, PowerOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { TwitterAccountForm } from './TwitterAccountForm';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 
 interface TwitterAccount {
   id: string;
   username: string;
   email: string;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'deleted';
   created_at: string;
 }
 
 export function TwitterAccounts() {
   const [accounts, setAccounts] = useState<TwitterAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showDeactivatedDialog, setShowDeactivatedDialog] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState<TwitterAccount | null>(null);
   const supabase = createClient();
   const router = useRouter();
 
   const fetchAccounts = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        throw new Error('User not authenticated');
-      }
-
       const { data, error } = await supabase
         .from('social_accounts')
         .select('*')
-        .eq('user_id', user.id)
         .eq('platform', 'twitter')
-        .eq('type', 'manual')
+        .is('deleted_at', null)  // Only get non-deleted accounts
+        .neq('status', 'deleted') // Also exclude accounts with deleted status
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       setAccounts(data || []);
     } catch (error) {
-      console.error('Error fetching Twitter accounts:', error);
+      console.error('Error fetching accounts:', error);
       toast.error('Failed to fetch Twitter accounts');
     } finally {
       setIsLoading(false);
@@ -70,7 +73,10 @@ export function TwitterAccounts() {
     try {
       const { error } = await supabase
         .from('social_accounts')
-        .delete()
+        .update({ 
+          deleted_at: new Date().toISOString(),
+          status: 'deleted'
+        })
         .eq('id', id);
 
       if (error) throw error;
@@ -83,7 +89,7 @@ export function TwitterAccounts() {
     }
   };
 
-  const handleStatusToggle = async (id: string, currentStatus: 'active' | 'inactive') => {
+  const handleStatusToggle = async (id: string, currentStatus: 'active' | 'inactive' | 'deleted') => {
     try {
       const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
       const { error } = await supabase
@@ -101,8 +107,13 @@ export function TwitterAccounts() {
     }
   };
 
-  const handleRowClick = (accountId: string) => {
-    router.push(`/dashboard/twitter/accounts/${accountId}`);
+  const handleRowClick = (account: TwitterAccount) => {
+    if (account.status === 'inactive' || account.status === 'deleted') {
+      setSelectedAccount(account);
+      setShowDeactivatedDialog(true);
+    } else {
+      router.push(`/dashboard/twitter/accounts/${account.id}`);
+    }
   };
 
   return (
@@ -141,9 +152,9 @@ export function TwitterAccounts() {
                 <TableRow 
                   key={account.id}
                   className="cursor-pointer hover:bg-gray-50"
-                  onClick={() => handleRowClick(account.id)}
+                  onClick={() => handleRowClick(account)}
                 >
-                  <TableCell>@{account.username}</TableCell>
+                  <TableCell>{account.username}</TableCell>
                   <TableCell>{account.email}</TableCell>
                   <TableCell>
                     <span
@@ -177,7 +188,7 @@ export function TwitterAccounts() {
                             handleStatusToggle(account.id, account.status);
                           }}
                         >
-                          {/* {account.status === 'active' ? (
+                          {account.status === 'active' ? (
                             <>
                               <PowerOff className="mr-2 h-4 w-4" />
                               Deactivate
@@ -187,7 +198,7 @@ export function TwitterAccounts() {
                               <Power className="mr-2 h-4 w-4" />
                               Activate
                             </>
-                          )} */}
+                          )}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-red-600"
@@ -207,6 +218,37 @@ export function TwitterAccounts() {
           </TableBody>
         </Table>
       </div>
+
+      <Dialog open={showDeactivatedDialog} onOpenChange={setShowDeactivatedDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Account Deactivated</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-gray-500">
+              This account is currently deactivated. Please activate the account first to proceed.
+            </p>
+          </div>
+          <div className="flex justify-end space-x-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowDeactivatedDialog(false)}
+            >
+              Close
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedAccount) {
+                  handleStatusToggle(selectedAccount.id, selectedAccount.status);
+                  setShowDeactivatedDialog(false);
+                }
+              }}
+            >
+              Activate Account
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 } 

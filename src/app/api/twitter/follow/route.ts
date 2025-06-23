@@ -282,38 +282,6 @@ export async function POST(request: NextRequest) {
       // Wait for action to complete
       await page.waitForTimeout(randomDelay(2000, 4000));
 
-
-      // // Verify the action was successful
-      // const verifySelectors = action === 'follow' ? [
-      //   '[data-testid$="-unfollow"]',
-      //   'button[aria-label="Following @rihanna"]',
-      //   'button[aria-label*="Following"]'
-      // ] : [
-      //   '[data-testid$="-follow"]',
-      //   'button[aria-label="Follow @rihanna"]',
-      //   'button[aria-label*="Follow"]'
-      // ];
-
-      // let isActionSuccessful = false;
-      // for (const selector of verifySelectors) {
-      //   try {
-      //     const button = await page.locator(selector).first();
-      //     if (await button.isVisible()) {
-      //       const buttonText = await button.textContent();
-      //       if (action === 'follow' ? buttonText?.includes('Following') : buttonText?.includes('Follow')) {
-      //         isActionSuccessful = true;
-      //         break;
-      //       }
-      //     }
-      //   } catch (error) {
-      //     console.error(`Selector ${selector} not found, trying next...`);
-      //   }
-      // }
-
-      // if (!isActionSuccessful) {
-      //   throw new Error(`Failed to verify ${action} action - could not find expected button state`);
-      // }
-
       // Log success to task_logs
       await supabase
         .from('task_logs')
@@ -322,6 +290,8 @@ export async function POST(request: NextRequest) {
           execution_time: new Date().toISOString(),
           result: 'success',
           message: `User ${action}ed successfully`,
+          proxy_used: account.proxy_ip && account.proxy_port ? 
+            `${account.proxy_ip}:${account.proxy_port}` : null
         }]);
 
       // Update task status
@@ -347,6 +317,8 @@ export async function POST(request: NextRequest) {
           execution_time: new Date().toISOString(),
           result: 'failed',
           message: error instanceof Error ? error.message : `Failed to ${action} user`,
+          proxy_used: account.proxy_ip && account.proxy_port ? 
+            `${account.proxy_ip}:${account.proxy_port}` : null
         }]);
 
       // Update task status

@@ -146,6 +146,8 @@ export async function POST(request: NextRequest) {
           execution_time: new Date().toISOString(),
           result: 'failed',
           message: 'Failed to create new page',
+          proxy_used: account.proxy_ip && account.proxy_port ? 
+            `${account.proxy_ip}:${account.proxy_port}` : null
         }]);
 
       // Update task status
@@ -158,24 +160,30 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+      console.log('Starting post creation process...');
+      
       // Navigate to Twitter
+      console.log('Navigating to Twitter home page...');
       await page.goto('https://x.com/home', {
         waitUntil: 'domcontentloaded',
-        timeout: 60000 // Increased timeout
+        timeout: 300000 // Increased from 60000 to 300000 (5 minutes)
       });
 
       // Wait for the page to load with random delay (more human-like)
+      console.log('Waiting for page load...');
       await page.waitForTimeout(randomDelay(2000, 4000));
 
       // Check if we're logged in by looking for tweet compose box
+      console.log('Checking login status...');
       const isLoggedIn = await page.locator('[data-testid="tweetTextarea_0"]').isVisible().catch(() => false);
       
       if (!isLoggedIn) {
-        
+        console.log('Not logged in, attempting to restore session...');
         const currentUrl = page.url();
         
         // If we're on login page, try to restore session
         if (currentUrl.includes('/login') || currentUrl.includes('/i/flow/login')) {
+          console.log('On login page, attempting to restore cookies...');
           
           // Try to restore cookies
           if (account.cookies) {
@@ -184,16 +192,19 @@ export async function POST(request: NextRequest) {
               await context.addCookies(cookies);
               
               // Navigate to home again
+              console.log('Navigating to home page after cookie restoration...');
               await page.goto('https://x.com/home', {
                 waitUntil: 'domcontentloaded',
-                timeout: 60000
+                timeout: 300000 // Increased from 60000 to 300000 (5 minutes)
               });
               
               // Wait and check if we're logged in now
+              console.log('Checking login status after cookie restoration...');
               await page.waitForTimeout(randomDelay(3000, 5000));
               const stillNotLoggedIn = await page.locator('[data-testid="tweetTextarea_0"]').isVisible().catch(() => false);
               
               if (!stillNotLoggedIn) {
+                console.log('Session restoration failed, updating account status...');
                 // Update account status to indicate session needs refresh
                 await supabase
                   .from('social_accounts')
@@ -211,13 +222,27 @@ export async function POST(request: NextRequest) {
           }
         }
       }
-      await page.waitForSelector('[data-testid="tweetTextarea_0"]', { timeout: 30000 });
+
+      console.log('Waiting for tweet textarea...');
+      await page.waitForSelector('[data-testid="tweetTextarea_0"]', { timeout: 300000 }); // Increased from 30000 to 300000 (5 minutes)
       const tweetTextarea = await page.locator('[data-testid="tweetTextarea_0"]').first();
       
+      // Remove any blocking overlays
+      console.log('Removing any blocking overlays...');
+      await page.evaluate(() => {
+        const masks = document.querySelectorAll('[data-testid="mask"], [data-testid="twc-cc-mask"]');
+        masks.forEach(mask => mask.remove());
+      });
+      
+      // Wait for masks to be removed
+      await page.waitForTimeout(1000);
+      
+      console.log('Clicking tweet textarea...');
       // Click the textarea with human-like delay
       await tweetTextarea.click({ delay: randomDelay(50, 150) });
       await page.waitForTimeout(randomDelay(500, 1000));
       
+      console.log('Typing tweet content...');
       // Type content with human-like typing speed
       for (const char of validatedContent) {
         await page.keyboard.type(char, { delay: randomDelay(30, 100) });
@@ -228,8 +253,9 @@ export async function POST(request: NextRequest) {
 
       // Upload media files if any
       if (mediaFiles.length > 0) {
+        console.log(`Uploading ${mediaFiles.length} media files...`);
         // Click the media upload button
-        const mediaButton = await page.waitForSelector('[data-testid="fileInput"]');
+        const mediaButton = await page.waitForSelector('[data-testid="fileInput"]', { timeout: 300000 }); // Increased from default to 300000 (5 minutes)
         if (!mediaButton) {
           throw new Error('Could not find media upload button');
         }
@@ -237,11 +263,13 @@ export async function POST(request: NextRequest) {
         // Upload each media file
         for (const media of mediaFiles) {
           try {
+            console.log(`Uploading ${media.type} file: ${media.path}`);
             // Set input files
             await mediaButton.setInputFiles(media.path);
 
             // Wait for media preview to appear
-            await page.waitForSelector('[data-testid="attachments"]', { timeout: 10000 });
+            console.log('Waiting for media preview...');
+            await page.waitForSelector('[data-testid="attachments"]', { timeout: 300000 }); // Increased from 10000 to 300000 (5 minutes)
 
             // Wait between uploads
             await page.waitForTimeout(randomDelay(1000, 2000));
@@ -288,6 +316,8 @@ export async function POST(request: NextRequest) {
           execution_time: new Date().toISOString(),
           result: 'success',
           message: 'Tweet created successfully',
+          proxy_used: account.proxy_ip && account.proxy_port ? 
+            `${account.proxy_ip}:${account.proxy_port}` : null
         }]);
 
       // Update task status
@@ -313,6 +343,8 @@ export async function POST(request: NextRequest) {
           execution_time: new Date().toISOString(),
           result: 'failed',
           message: error instanceof Error ? error.message : 'Failed to create tweet',
+          proxy_used: account.proxy_ip && account.proxy_port ? 
+            `${account.proxy_ip}:${account.proxy_port}` : null
         }]);
 
       // Update task status

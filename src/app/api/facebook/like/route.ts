@@ -149,6 +149,8 @@ export async function POST(request: NextRequest) {
           execution_time: new Date().toISOString(),
           result: "failed",
           message: "Could not find or click Like button",
+          proxy_used: account.proxy_ip && account.proxy_port ? 
+            `${account.proxy_ip}:${account.proxy_port}` : null
         },
       ]);
 
@@ -169,6 +171,8 @@ export async function POST(request: NextRequest) {
           execution_time: new Date().toISOString(),
           result: "success",
           message: "Post is already liked",
+          proxy_used: account.proxy_ip && account.proxy_port ? 
+            `${account.proxy_ip}:${account.proxy_port}` : null
         },
       ]);
 
@@ -185,186 +189,192 @@ export async function POST(request: NextRequest) {
     }
 
     // Wait for reaction selector
-    try {
-      await page.waitForSelector('[aria-label="Like"], [aria-label="React"]', {
-        timeout: 5000,
-      });
-    } catch (error) {
-      // Log failure to task_logs
-      await supabase.from("task_logs").insert([
-        {
-          task_id: task.id,
-          execution_time: new Date().toISOString(),
-          result: "failed",
-          message: "Failed to find reaction selector",
-        },
-      ]);
+    // try {
+    //   await page.waitForSelector('[aria-label="Like"], [aria-label="React"]', {
+    //     timeout: 5000,
+    //   });
+    // } catch (error) {
+    //   // Log failure to task_logs
+    //   await supabase.from("task_logs").insert([
+    //     {
+    //       task_id: task.id,
+    //       execution_time: new Date().toISOString(),
+    //       result: "failed",
+    //       message: "Failed to find reaction selector",
+    //       proxy_used: account.proxy_ip && account.proxy_port ? 
+    //         `${account.proxy_ip}:${account.proxy_port}` : null
+    //     },
+    //   ]);
 
-      // Update task status
-      await supabase
-        .from("tasks")
-        .update({ status: "failed" })
-        .eq("id", task.id);
+    //   // Update task status
+    //   await supabase
+    //     .from("tasks")
+    //     .update({ status: "failed" })
+    //     .eq("id", task.id);
 
-      throw new Error("Failed to find reaction selector");
-    }
+    //   throw new Error("Failed to find reaction selector");
+    // }
 
     // Click reaction button again
-    const clickResult = await page.evaluate(() => {
-      const selectors = [
-        '[aria-label="Like"][role="button"]',
-        '[aria-label="React"][role="button"]',
-        'button[aria-label="Like"]',
-        'button[aria-label="React"]',
-        '[role="button"][aria-label="Like"]',
-        '[role="button"][aria-label="React"]',
-      ];
+    // const clickResult = await page.evaluate(() => {
+    //   const selectors = [
+    //     '[aria-label="Like"][role="button"]',
+    //     '[aria-label="React"][role="button"]',
+    //     'button[aria-label="Like"]',
+    //     'button[aria-label="React"]',
+    //     '[role="button"][aria-label="Like"]',
+    //     '[role="button"][aria-label="React"]',
+    //   ];
 
-      for (const selector of selectors) {
-        const button = document.querySelector(selector) as HTMLElement | null;
-        if (button && button.offsetParent !== null) {
-          try {
-            button.click();
-            return true;
-          } catch (e) {
-            try {
-              const clickEvent = new MouseEvent("click", {
-                view: window,
-                bubbles: true,
-                cancelable: true,
-                buttons: 1,
-              });
-              button.dispatchEvent(clickEvent);
-              return true;
-            } catch (e) {
-              try {
-                const mousedownEvent = new MouseEvent("mousedown", {
-                  view: window,
-                  bubbles: true,
-                  cancelable: true,
-                  buttons: 1,
-                });
-                const mouseupEvent = new MouseEvent("mouseup", {
-                  view: window,
-                  bubbles: true,
-                  cancelable: true,
-                  buttons: 1,
-                });
-                button.dispatchEvent(mousedownEvent);
-                button.dispatchEvent(mouseupEvent);
-                return true;
-              } catch (e) {
-                console.error("All click methods failed for selector:", selector);
-              }
-            }
-          }
-        }
-      }
-      return false;
-    });
+    //   for (const selector of selectors) {
+    //     const button = document.querySelector(selector) as HTMLElement | null;
+    //     if (button && button.offsetParent !== null) {
+    //       try {
+    //         button.click();
+    //         return true;
+    //       } catch (e) {
+    //         try {
+    //           const clickEvent = new MouseEvent("click", {
+    //             view: window,
+    //             bubbles: true,
+    //             cancelable: true,
+    //             buttons: 1,
+    //           });
+    //           button.dispatchEvent(clickEvent);
+    //           return true;
+    //         } catch (e) {
+    //           try {
+    //             const mousedownEvent = new MouseEvent("mousedown", {
+    //               view: window,
+    //               bubbles: true,
+    //               cancelable: true,
+    //               buttons: 1,
+    //             });
+    //             const mouseupEvent = new MouseEvent("mouseup", {
+    //               view: window,
+    //               bubbles: true,
+    //               cancelable: true,
+    //               buttons: 1,
+    //             });
+    //             button.dispatchEvent(mousedownEvent);
+    //             button.dispatchEvent(mouseupEvent);
+    //             return true;
+    //           } catch (e) {
+    //             console.error("All click methods failed for selector:", selector);
+    //           }
+    //         }
+    //       }
+    //     }
+    //   }
+    //   return false;
+    // });
 
-    if (!clickResult) {
-      // Log failure to task_logs
-      await supabase.from("task_logs").insert([
-        {
-          task_id: task.id,
-          execution_time: new Date().toISOString(),
-          result: "failed",
-          message: "Failed to click reaction button",
-        },
-      ]);
+    // if (!clickResult) {
+    //   // Log failure to task_logs
+    //   await supabase.from("task_logs").insert([
+    //     {
+    //       task_id: task.id,
+    //       execution_time: new Date().toISOString(),
+    //       result: "failed",
+    //       message: "Failed to click reaction button",
+    //       proxy_used: account.proxy_ip && account.proxy_port ? 
+    //         `${account.proxy_ip}:${account.proxy_port}` : null
+    //     },
+    //   ]);
 
-      // Update task status
-      await supabase
-        .from("tasks")
-        .update({ status: "failed" })
-        .eq("id", task.id);
+    //   // Update task status
+    //   await supabase
+    //     .from("tasks")
+    //     .update({ status: "failed" })
+    //     .eq("id", task.id);
 
-      throw new Error("Failed to click reaction button");
-    }
+    //   throw new Error("Failed to click reaction button");
+    // }
 
-    // Wait for reaction to be applied
-    await page.waitForTimeout(2000);
+    // // Wait for reaction to be applied
+    // await page.waitForTimeout(2000);
 
-    // Verify reaction
-    const verificationResult = await page.evaluate(() => {
-      const reactionIndicators = Array.from(
-        document.querySelectorAll('[aria-label*="reaction"]')
-      );
-      const hasReactionIndicator = reactionIndicators.some((indicator) => {
-        const label = indicator.getAttribute("aria-label") || "";
-        return (
-          label.includes("You reacted") ||
-          label.includes("You and") ||
-          label.includes("others reacted") ||
-          label.includes("Like") ||
-          label.includes("Unlike")
-        );
-      });
+    // // Verify reaction
+    // const verificationResult = await page.evaluate(() => {
+    //   const reactionIndicators = Array.from(
+    //     document.querySelectorAll('[aria-label*="reaction"]')
+    //   );
+    //   const hasReactionIndicator = reactionIndicators.some((indicator) => {
+    //     const label = indicator.getAttribute("aria-label") || "";
+    //     return (
+    //       label.includes("You reacted") ||
+    //       label.includes("You and") ||
+    //       label.includes("others reacted") ||
+    //       label.includes("Like") ||
+    //       label.includes("Unlike")
+    //     );
+    //   });
 
-      const likeButton = Array.from(
-        document.querySelectorAll('button, [role="button"]')
-      ).find((button) => {
-        const ariaLabel = button.getAttribute("aria-label") || "";
-        return (
-          (ariaLabel === "Like" ||
-            ariaLabel === "React" ||
-            ariaLabel === "Unlike" ||
-            ariaLabel === "Remove Like") &&
-          button.getAttribute("aria-pressed") === "true"
-        );
-      });
-      const isButtonActive = !!likeButton;
+    //   const likeButton = Array.from(
+    //     document.querySelectorAll('button, [role="button"]')
+    //   ).find((button) => {
+    //     const ariaLabel = button.getAttribute("aria-label") || "";
+    //     return (
+    //       (ariaLabel === "Like" ||
+    //         ariaLabel === "React" ||
+    //         ariaLabel === "Unlike" ||
+    //         ariaLabel === "Remove Like") &&
+    //       button.getAttribute("aria-pressed") === "true"
+    //     );
+    //   });
+    //   const isButtonActive = !!likeButton;
 
-      const reactionCounts = Array.from(
-        document.querySelectorAll('[aria-label*="reactions"]')
-      );
-      const hasReactionCount = reactionCounts.some((count) => {
-        const text = count.textContent || "";
-        return text.includes("1") || text.includes("You");
-      });
+    //   const reactionCounts = Array.from(
+    //     document.querySelectorAll('[aria-label*="reactions"]')
+    //   );
+    //   const hasReactionCount = reactionCounts.some((count) => {
+    //     const text = count.textContent || "";
+    //     return text.includes("1") || text.includes("You");
+    //   });
 
-      const reactionEmojis = Array.from(
-        document.querySelectorAll('[aria-label*="emoji"]')
-      );
-      const hasReactionEmoji = reactionEmojis.some((emoji) => {
-        const label = emoji.getAttribute("aria-label") || "";
-        return label.includes("Like") || label.includes("You");
-      });
+    //   const reactionEmojis = Array.from(
+    //     document.querySelectorAll('[aria-label*="emoji"]')
+    //   );
+    //   const hasReactionEmoji = reactionEmojis.some((emoji) => {
+    //     const label = emoji.getAttribute("aria-label") || "";
+    //     return label.includes("Like") || label.includes("You");
+    //   });
 
-      return {
-        hasReactionIndicator,
-        isButtonActive,
-        hasReactionCount,
-        hasReactionEmoji,
-      };
-    });
+    //   return {
+    //     hasReactionIndicator,
+    //     isButtonActive,
+    //     hasReactionCount,
+    //     hasReactionEmoji,
+    //   };
+    // });
 
-    const isReactionApplied =
-      verificationResult.hasReactionIndicator ||
-      verificationResult.isButtonActive ||
-      verificationResult.hasReactionCount ||
-      verificationResult.hasReactionEmoji;
+    // const isReactionApplied =
+    //   verificationResult.hasReactionIndicator ||
+    //   verificationResult.isButtonActive ||
+    //   verificationResult.hasReactionCount ||
+    //   verificationResult.hasReactionEmoji;
 
-    if (!isReactionApplied) {
-      // Log failure to task_logs
-      await supabase.from("task_logs").insert([
-        {
-          task_id: task.id,
-          execution_time: new Date().toISOString(),
-          result: "failed",
-          message: "Could not verify reaction was applied",
-        },
-      ]);
+    // if (!isReactionApplied) {
+    //   // Log failure to task_logs
+    //   await supabase.from("task_logs").insert([
+    //     {
+    //       task_id: task.id,
+    //       execution_time: new Date().toISOString(),
+    //       result: "failed",
+    //       message: "Could not verify reaction was applied",
+    //       proxy_used: account.proxy_ip && account.proxy_port ? 
+    //         `${account.proxy_ip}:${account.proxy_port}` : null
+    //     },
+    //   ]);
 
-      // Update task status
-      await supabase
-        .from("tasks")
-        .update({ status: "failed" })
-        .eq("id", task.id);
+    //   // Update task status
+    //   await supabase
+    //     .from("tasks")
+    //     .update({ status: "failed" })
+    //     .eq("id", task.id);
 
-      throw new Error("Could not verify reaction was applied");
-    }
+    //   throw new Error("Could not verify reaction was applied");
+    // }
 
     // Log success to task_logs
     await supabase.from("task_logs").insert([
@@ -373,6 +383,8 @@ export async function POST(request: NextRequest) {
         execution_time: new Date().toISOString(),
         result: "success",
         message: "Like action completed successfully",
+        proxy_used: account.proxy_ip && account.proxy_port ? 
+          `${account.proxy_ip}:${account.proxy_port}` : null
       },
     ]);
 

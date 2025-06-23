@@ -4,162 +4,244 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import { BrowserContext, Cookie, Page } from "playwright";
 import { createStealthSetup } from "@/lib/playwright-config";
+import { logError } from '@/lib/error-logger';
 
 // Schema for request validation
 const addAccountSchema = z.object({
   username: z.string().min(1, "Username is required"),
-  email: z.string().email(),
   password: z.string().min(1),
   proxy_username: z.string().min(1, "Proxy username is required"),
   proxy_password: z.string().min(1, "Proxy password is required"),
   proxy_ip: z.string().min(1, "Proxy IP is required"),
-  proxy_port: z.string().min(1, "Proxy port is required"),
+  proxy_port: z.coerce.number().min(1, "Proxy port is required"),
 });
 
 const randomDelay = (min: number, max: number) =>
   Math.floor(Math.random() * (max - min + 1)) + min;
 
+interface FacebookCookie {
+  domain: string;
+  expirationDate: number;
+  hostOnly: boolean;
+  httpOnly: boolean;
+  name: string;
+  path: string;
+  sameSite: string;
+  secure: boolean;
+  session: boolean;
+  storeId: string;
+  value: string;
+}
+
 export async function POST(request: Request) {
+  const cookieStore = cookies();
+  const supabase = await createClient(cookieStore);
+
   try {
-    // Get user session
-    let context: BrowserContext | null = null;
-    let page: Page | null = null;
+    const { data: { user } } = await supabase.auth.getUser();
 
-    const cookieStore = cookies();
-    const supabase = await createClient(cookieStore);
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
-    // Parse and validate request body
     const body = await request.json();
     const {
       username,
-      email,
       password,
+      cookies: accountCookies,
       proxy_username,
       proxy_password,
       proxy_ip,
       proxy_port,
-    } = addAccountSchema.parse(body);
+    } = body;
 
-    const proxyConfig =
-      proxy_ip && proxy_port
-        ? {
-            type: "http",
-            server: proxy_ip,
-            port: proxy_port.toString(),
-            username: proxy_username || "",
-            password: proxy_password || "",
+    if (!username || !password || !accountCookies) {
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      );
+    }
+
+    // Parse and validate cookies
+    let parsedCookies: FacebookCookie[];
+    try {
+      // First try to parse if it's a string
+      const cookiesToParse = typeof accountCookies === 'string' ? accountCookies : JSON.stringify(accountCookies);
+      parsedCookies = JSON.parse(cookiesToParse);
+      
+      if (!Array.isArray(parsedCookies)) {
+        throw new Error('Cookies must be an array');
+      }
+
+      // Validate required cookie fields
+      const requiredFields = ['name', 'value', 'domain', 'path'] as const;
+      for (const cookie of parsedCookies) {
+        for (const field of requiredFields) {
+          if (!cookie[field]) {
+            throw new Error(`Cookie is missing required field: ${field}`);
           }
-        : undefined;
+        }
+      }
+    } catch (e: unknown) {
+      console.error('Cookie parsing error:', e);
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+      return NextResponse.json(
+        { error: `Invalid cookies format: ${errorMessage}` },
+        { status: 400 }
+      );
+    }
 
-    // Create browser with stealth configuration and HTTPS proxy, in headed mode
-    const { context: newContext, page: newPage } = await createStealthSetup(
-      undefined,
-      proxyConfig,
-      false
-    );
-    context = newContext;
-    page = newPage;
+    // Format cookies for Playwright
+    const formattedCookies = parsedCookies.map(cookie => ({
+      name: cookie.name,
+      value: cookie.value,
+      domain: cookie.domain,
+      path: cookie.path,
+      expires: cookie.expirationDate,
+      httpOnly: cookie.httpOnly,
+      secure: cookie.secure,
+      sameSite: cookie.sameSite === 'no_restriction' ? 'none' : cookie.sameSite,
+    }));
 
-    // Facebook account already exists.find by email
-    const { data: account, error: dbError } = await supabase
-      .from("social_accounts")
-      .select("*")
-      .eq("email", email)
-      .eq("platform", "facebook")
+    // Check if account already exists
+    const { data: existingAccount } = await supabase
+      .from('social_accounts')
+      .select('id, status')
+      .eq('user_id', user.id)
+      .eq('platform', 'facebook')
+      .eq('username', username)
       .single();
 
-    if (account) {
-      return NextResponse.json({
-        success: false,
-        message: "Facebook account already exists",
-      });
-    }
+    if (existingAccount) {
+      if (existingAccount.status === 'pending') {
+        // Delete pending account
+        await supabase
+          .from('social_accounts')
+          .delete()
+          .eq('id', existingAccount.id);
+      } else {
+        // Log failed task for duplicate account
+        await supabase.from('tasks').insert({
+          user_id: user.id,
+          type: 'add-account',
+          status: 'failed',
+          platform: 'facebook',
+          task_logs: [{
+            execution_time: new Date().toISOString(),
+            result: 'failed',
+            message: `Account with username ${username} already exists`
+          }]
+        });
 
-    if (!page) {
-      throw new Error("Failed to create new page");
-    }
-
-    try {
-      // Navigate to Facebook login
-      await page.goto("https://www.facebook.com/");
-
-      // Fill in login credentials
-      await page.fill('input[name="email"]', email);
-      await page.fill('input[name="pass"]', password);
-      await page.click('button[name="login"]');
-
-      // Wait for login to complete (5 minutes timeout)
-      try {
-        await Promise.race([
-          page.waitForSelector('[aria-label="Account controls and settings"]', {
-            timeout: 300000,
-          }),
-          page.waitForSelector('[aria-label="Your profile"]', {
-            timeout: 300000,
-          }),
-          page.waitForSelector('[aria-label="Create"]', { timeout: 300000 }),
-        ]);
-      } catch (error) {
-        throw new Error(
-          "Login timeout - please complete the login process within 5 minutes"
+        return NextResponse.json(
+          { error: 'Account already exists' },
+          { status: 400 }
         );
       }
-
-      // Get cookies after successful login
-      const cookies = await context.cookies();
-      const cookieString = cookies
-        .map((cookie: Cookie) => `${cookie.name}=${cookie.value}`)
-        .join("; ");
-
-      // Store account details in Supabase with proxy configuration
-      const { data: newAccount, error: dbError } = await supabase
-        .from("social_accounts")
-        .insert({
-          user_id: session.user.id,
-          platform: "facebook",
-          type: "manual",
-          username: username,
-          email: email,
-          password: password,
-          cookies: cookieString,
-          proxy_type: proxyConfig?.type || "http",
-          proxy_ip: proxyConfig?.server || "",
-          proxy_port: proxyConfig?.port || "",
-          proxy_username: proxyConfig?.username || "",
-          proxy_password: proxyConfig?.password || "",
-          proxy_country: "US",
-          proxy_rotation_interval: 3600,
-          status: "active",
-        })
-        .select()
-        .single();
-
-      if (dbError) {
-        throw new Error(`Failed to store account: ${dbError.message}`);
-      }
-
-      return NextResponse.json({
-        success: true,
-        message: "Facebook account added successfully",
-        account: newAccount,
-      });
-    } finally {
-      if (context) await context.close();
     }
+
+    // Insert new account with cookies
+    const { data: account, error: insertError } = await supabase
+      .from('social_accounts')
+      .insert({
+        user_id: user.id,
+        platform: 'facebook',
+        type: 'manual',
+        username,
+        password,
+        cookies: formattedCookies,
+        proxy_username,
+        proxy_password,
+        proxy_ip,
+        proxy_port,
+        status: 'active',
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('Error inserting account:', insertError);
+      await logError({
+        userId: user.id,
+        category: 'account_verification',
+        message: 'Failed to add Facebook account',
+        error: insertError,
+        metadata: {
+          username,
+          platform: 'facebook',
+        },
+      });
+
+      // Log failed task for database error
+      await supabase.from('tasks').insert({
+        user_id: user.id,
+        type: 'add-account',
+        status: 'failed',
+        platform: 'facebook',
+        task_logs: [{
+          execution_time: new Date().toISOString(),
+          result: 'failed',
+          message: `Failed to create account: ${insertError.message}`
+        }]
+      });
+
+      return NextResponse.json(
+        { error: 'Failed to add account' },
+        { status: 500 }
+      );
+    }
+
+    // Log successful task
+    await supabase.from('tasks').insert({
+      user_id: user.id,
+      type: 'add-account',
+      status: 'completed',
+      platform: 'facebook',
+      social_account_id: account.id,
+      task_logs: [{
+        execution_time: new Date().toISOString(),
+        result: 'success',
+        message: `Successfully added Facebook account: ${username}`
+      }]
+    });
+
+    return NextResponse.json({ account });
   } catch (error) {
-    console.error("Error adding Facebook account:", error);
-    return NextResponse.json(
-      {
-        error: "Failed to add Facebook account",
-        details: error instanceof Error ? error.message : "Unknown error",
+    console.error('Error in add-account:', error);
+    await logError({
+      category: 'account_verification',
+      message: 'Failed to add Facebook account',
+      error,
+      metadata: {
+        platform: 'facebook',
       },
+    });
+
+    // Log failed task for any other errors
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('tasks').insert({
+          user_id: user.id,
+          type: 'add-account',
+          status: 'failed',
+          platform: 'facebook',
+          task_logs: [{
+            execution_time: new Date().toISOString(),
+            result: 'failed',
+            message: error instanceof Error ? error.message : 'Unknown error occurred'
+          }]
+        });
+      }
+    } catch (logError) {
+      console.error('Error logging failed task:', logError);
+    }
+
+    return NextResponse.json(
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }

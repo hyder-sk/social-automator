@@ -21,41 +21,44 @@ import {
 import { MoreHorizontal, Power, PowerOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { FacebookAccountForm } from './FacebookAccountForm';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 
 interface FacebookAccount {
   id: string;
   username: string;
   email: string;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'deleted';
   created_at: string;
 }
 
 export function FacebookAccounts() {
   const [accounts, setAccounts] = useState<FacebookAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showDeactivatedDialog, setShowDeactivatedDialog] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState<FacebookAccount | null>(null);
   const supabase = createClient();
   const router = useRouter();
 
   const fetchAccounts = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        throw new Error('User not authenticated');
-      }
-
       const { data, error } = await supabase
         .from('social_accounts')
         .select('*')
-        .eq('user_id', user.id)
         .eq('platform', 'facebook')
-        .eq('type', 'manual')
+        .is('deleted_at', null)
+        .neq('status', 'deleted')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       setAccounts(data || []);
     } catch (error) {
-      console.error('Error fetching Facebook accounts:', error);
+      console.error('Error fetching accounts:', error);
       toast.error('Failed to fetch Facebook accounts');
     } finally {
       setIsLoading(false);
@@ -70,7 +73,10 @@ export function FacebookAccounts() {
     try {
       const { error } = await supabase
         .from('social_accounts')
-        .delete()
+        .update({ 
+          deleted_at: new Date().toISOString(),
+          status: 'deleted'
+        })
         .eq('id', id);
 
       if (error) throw error;
@@ -83,7 +89,7 @@ export function FacebookAccounts() {
     }
   };
 
-  const handleStatusToggle = async (id: string, currentStatus: 'active' | 'inactive') => {
+  const handleStatusToggle = async (id: string, currentStatus: 'active' | 'inactive' | 'deleted') => {
     try {
       const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
       const { error } = await supabase
@@ -101,8 +107,13 @@ export function FacebookAccounts() {
     }
   };
 
-  const handleRowClick = (accountId: string) => {
-    router.push(`/dashboard/facebook/accounts/${accountId}`);
+  const handleRowClick = (account: FacebookAccount) => {
+    if (account.status === 'inactive' || account.status === 'deleted') {
+      setSelectedAccount(account);
+      setShowDeactivatedDialog(true);
+    } else {
+      router.push(`/dashboard/facebook/accounts/${account.id}`);
+    }
   };
 
   return (
@@ -141,7 +152,7 @@ export function FacebookAccounts() {
                 <TableRow 
                   key={account.id}
                   className="cursor-pointer hover:bg-gray-50"
-                  onClick={() => handleRowClick(account.id)}
+                  onClick={() => handleRowClick(account)}
                 >
                   <TableCell>{account.username}</TableCell>
                   <TableCell>{account.email}</TableCell>
@@ -207,6 +218,37 @@ export function FacebookAccounts() {
           </TableBody>
         </Table>
       </div>
+
+      <Dialog open={showDeactivatedDialog} onOpenChange={setShowDeactivatedDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Account Deactivated</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-gray-500">
+              This account is currently deactivated. Please activate the account first to proceed.
+            </p>
+          </div>
+          <div className="flex justify-end space-x-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowDeactivatedDialog(false)}
+            >
+              Close
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedAccount) {
+                  handleStatusToggle(selectedAccount.id, selectedAccount.status);
+                  setShowDeactivatedDialog(false);
+                }
+              }}
+            >
+              Activate Account
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 } 
